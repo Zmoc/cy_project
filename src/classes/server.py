@@ -3,6 +3,7 @@ import json
 import socket
 import ssl
 import threading
+from abc import ABC, abstractmethod
 
 from Crypto.Cipher import AES, PKCS1_OAEP
 from Crypto.PublicKey import RSA

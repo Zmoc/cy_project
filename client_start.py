@@ -1,11 +1,12 @@
+from config import CERT_FILE, DB_PATH, SERVER_HOST, SERVER_PORT, SERVER_PUBLIC_KEY
 from src.classes.v_client import Voter_Client
 
 client = Voter_Client(
-    server_host="127.0.0.1",
-    server_port="12345",
-    certfile="certs/server.crt",
-    public_key="certs/server_public.pem",
-    db_path="data/db/fing_hash.db",
+    host=SERVER_HOST,
+    port=SERVER_PORT,
+    certfile=CERT_FILE,
+    public_key=SERVER_PUBLIC_KEY,
+    db_path=DB_PATH,
 )
 
 client.connect()
