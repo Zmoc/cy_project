@@ -54,6 +54,10 @@ class SecureClient:
         except (ValueError, KeyError, json.JSONDecodeError):
             return None  # Handle decryption failure
 
+    @abstractmethod
+    def message(self):
+        pass
+
     def connect(self):
         """Connect to the secure server"""
         with socket.create_connection(
@@ -74,7 +78,7 @@ class SecureClient:
 
                     while True:
                         # Step 2: Get user input and send encrypted message
-                        message = input("Enter message (type 'exit' to quit): ")
+                        message = self.message()
                         encrypted_payload = self.encrypt_message(aes_key, message)
                         secure_socket.send(encrypted_payload.encode())
 

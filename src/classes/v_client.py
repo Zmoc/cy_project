@@ -16,5 +16,9 @@ class Voter_Client(SecureClient):
     def cursor(self):
         return self.cur
 
+    def message(self):
+        message = input("Enter message (type 'exit' to quit): ")
+        return message
+
 
 # Record (id, first_name,last_name,fing_hash)
