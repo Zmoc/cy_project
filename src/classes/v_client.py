@@ -1,8 +1,11 @@
 import sqlite3
 
+from src.classes.client import SecureClient
 
-class Voter_Server:
-    def __init__(self, db_path):
+
+class Voter_Client(SecureClient):
+    def __init__(self, server_host, server_port, certfile, public_key, db_path):
+        super().__init__(server_host, server_port, certfile, public_key)
         self.db_path = db_path
         self.con = sqlite3.connect(database=self.db_path)
         self.cur = self.con.cursor()
