@@ -1,4 +1,3 @@
-import base64
 import json
 import socket
 import ssl
@@ -20,13 +19,10 @@ class SecureClient:
         with open(public_key, "rb") as f:
             self.server_public_key = RSA.import_key(f.read())
 
-    def base64_encode(self, data):
-        return base64.b64encode(data).decode()
-
     def encrypt_aes_key(self, aes_key):
         """Encrypt AES key using RSA"""
         cipher_rsa = PKCS1_OAEP.new(self.server_public_key)
-        return self.base64_encode(cipher_rsa.encrypt(aes_key))
+        return cipher_rsa.encrypt(aes_key)
 
     def encrypt_message(self, aes_key, message):
         """Encrypt a message using AES-GCM"""
@@ -34,9 +30,9 @@ class SecureClient:
         ciphertext, tag = cipher_aes.encrypt_and_digest(message.encode())
         return json.dumps(
             {
-                "nonce": self.base64_encode(cipher_aes.nonce),
-                "ciphertext": self.base64_encode(ciphertext),
-                "tag": self.base64_encode(tag),
+                "nonce": cipher_aes.nonce.hex(),
+                "ciphertext": ciphertext.hex(),
+                "tag": tag.hex(),
             }
         )
 
@@ -45,11 +41,11 @@ class SecureClient:
         try:
             payload = json.loads(payload)
             cipher_aes = AES.new(
-                aes_key, AES.MODE_GCM, nonce=base64.b64decode(payload["nonce"])
+                aes_key, AES.MODE_GCM, nonce=bytes.fromhex(payload["nonce"])
             )
             return cipher_aes.decrypt_and_verify(
-                base64.b64decode(payload["ciphertext"]),
-                base64.b64decode(payload["tag"]),
+                bytes.fromhex(payload["ciphertext"]),
+                bytes.fromhex(payload["tag"]),
             ).decode()
         except (ValueError, KeyError, json.JSONDecodeError):
             return None  # Handle decryption failure
@@ -57,6 +53,24 @@ class SecureClient:
     @abstractmethod
     def message(self):
         pass
+
+    def send_aes_key(self, secure_socket):
+        aes_key = get_random_bytes(32)  # 256-bit AES key
+        encrypted_aes_key = self.encrypt_aes_key(aes_key)
+        secure_socket.send(encrypted_aes_key)
+        print("🔑 [CLIENT] AES Key Sent Securely.")
+        return aes_key
+
+    def rcvd_decrypt(self, secure_socket, aes_key):
+        response_payload = secure_socket.recv(4096).decode()
+        decrypted_response = self.decrypt_message(aes_key, response_payload)
+        return decrypted_response
+
+    def send_encrypt(self, secure_socket, aes_key):
+        message = self.message()
+        encrypted_payload = self.encrypt_message(aes_key, message)
+        secure_socket.send(encrypted_payload.encode())
+        return message
 
     def connect(self):
         """Connect to the secure server"""
@@ -70,27 +84,18 @@ class SecureClient:
 
                 try:
                     # Step 1: Generate and send AES key
-                    aes_key = get_random_bytes(32)  # 256-bit AES key
-                    encrypted_aes_key = self.encrypt_aes_key(aes_key)
-                    secure_socket.send(encrypted_aes_key.encode())
-
-                    print("🔑 [CLIENT] AES Key Sent Securely.")
+                    aes_key = self.send_aes_key(secure_socket)
 
                     while True:
                         # Step 2: Get user input and send encrypted message
-                        message = self.message()
-                        encrypted_payload = self.encrypt_message(aes_key, message)
-                        secure_socket.send(encrypted_payload.encode())
+                        message = self.send_encrypt(secure_socket, aes_key)
 
                         if message.lower() == "exit":
                             print("🔴 [CLIENT] Disconnecting...")
                             break
 
                         # Step 3: Receive and decrypt response
-                        response_payload = secure_socket.recv(4096).decode()
-                        decrypted_response = self.decrypt_message(
-                            aes_key, response_payload
-                        )
+                        decrypted_response = self.rcvd_decrypt(secure_socket, aes_key)
 
                         if decrypted_response:
                             print(f"📩 [CLIENT] Server Response: {decrypted_response}")

@@ -1,4 +1,3 @@
-import base64
 import json
 import socket
 import ssl
@@ -22,14 +21,11 @@ class SecureServer:
 
         self.clients = []  # Track active client threads
 
-    def base64_decode(self, data):
-        return base64.b64decode(data)
-
     def decrypt_aes_key(self, encrypted_key):
         """Decrypt AES key using server's private RSA key"""
         try:
             cipher_rsa = PKCS1_OAEP.new(self.server_private_key)
-            return cipher_rsa.decrypt(self.base64_decode(encrypted_key))
+            return cipher_rsa.decrypt(encrypted_key)
         except ValueError:
             print("[ERROR] AES Key decryption failed!")
             return None
@@ -39,11 +35,11 @@ class SecureServer:
         try:
             payload = json.loads(payload)
             cipher_aes = AES.new(
-                aes_key, AES.MODE_GCM, nonce=self.base64_decode(payload["nonce"])
+                aes_key, AES.MODE_GCM, nonce=bytes.fromhex(payload["nonce"])
             )
             return cipher_aes.decrypt_and_verify(
-                self.base64_decode(payload["ciphertext"]),
-                self.base64_decode(payload["tag"]),
+                bytes.fromhex(payload["ciphertext"]),
+                bytes.fromhex(payload["tag"]),
             ).decode()
         except (ValueError, KeyError, json.JSONDecodeError):
             print("[ERROR] Message decryption failed!")
@@ -55,18 +51,24 @@ class SecureServer:
         ciphertext, tag = cipher_aes.encrypt_and_digest(message.encode())
         return json.dumps(
             {
-                "nonce": base64.b64encode(cipher_aes.nonce).decode(),
-                "ciphertext": base64.b64encode(ciphertext).decode(),
-                "tag": base64.b64encode(tag).decode(),
+                "nonce": cipher_aes.nonce.hex(),
+                "ciphertext": ciphertext.hex(),
+                "tag": tag.hex(),
             }
         )
+
+    def send_encrypt(self, client_socket, aes_key, decrypted_message):
+        response_payload = self.encrypt_message(
+            aes_key, f"Server received: {decrypted_message}"
+        )
+        client_socket.send(response_payload.encode())
 
     def handle_client(self, client_socket, addr):
         """Handles communication with a single client"""
         try:
             with client_socket:
                 # Receive encrypted AES key
-                encrypted_aes_key = client_socket.recv(1024).decode()
+                encrypted_aes_key = client_socket.recv(1024)
                 aes_key = self.decrypt_aes_key(encrypted_aes_key)
                 if not aes_key:
                     return
@@ -89,10 +91,7 @@ class SecureServer:
                             break
 
                         # Send encrypted response
-                        response_payload = self.encrypt_message(
-                            aes_key, f"Server received: {decrypted_message}"
-                        )
-                        client_socket.send(response_payload.encode())
+                        self.send_encrypt(client_socket, aes_key, decrypted_message)
 
         except ConnectionResetError:
             print(f"⚠️ [ERROR] Connection lost from {addr}")
