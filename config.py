@@ -1,6 +1,7 @@
 # Server Configuration
 SERVER_HOST = "127.0.0.1"
 SERVER_PORT = 50000
+CONNECTION_TIMEOUT = 60
 
 # SSL Certificate Paths
 CERT_FILE = "certs/ssl_certificate.crt"
@@ -14,4 +15,6 @@ AES_KEY_SIZE = 32  # 256-bit AES key
 MAX_MESSAGE_SIZE = 4096
 
 # Fingerprint Database Path
-DB_PATH = "data/db/fing_hash.db"
+FING_DB = "data/db/fing_hash.db"
+CLIENT_DB = "data/db/client.db"
+USER_DB = "data/db/user.db"
