@@ -15,8 +15,8 @@ with open("certs/server_public.pem", "wb") as f:
 print("RSA Key Pair Generated:")
 
 # Create a new private key
-key = crypto.PKey()
-key.generate_key(crypto.TYPE_RSA, 2048)
+ssl_key = crypto.PKey()
+ssl_key.generate_key(crypto.TYPE_RSA, 2048)
 
 # Create a self-signed certificate
 cert = crypto.X509()
@@ -25,7 +25,7 @@ cert.set_serial_number(1000)
 cert.gmtime_adj_notBefore(0)
 cert.gmtime_adj_notAfter(365 * 24 * 60 * 60)  # Valid for 1 year
 cert.set_issuer(cert.get_subject())  # Self-signed certificate
-cert.set_pubkey(key)
+cert.set_pubkey(ssl_key)
 
 # Add extensions
 extensions = [
@@ -41,11 +41,11 @@ extensions = [
 cert.add_extensions(extensions)
 
 # Sign the certificate with the private key
-cert.sign(key, "sha256")
+cert.sign(ssl_key, "sha256")
 
 # Save the private key to a file
 with open("certs/ssl_private.key", "wb") as f:
-    f.write(crypto.dump_privatekey(crypto.FILETYPE_PEM, key))
+    f.write(crypto.dump_privatekey(crypto.FILETYPE_PEM, ssl_key))
 
 # Save the certificate to a file
 with open("certs/ssl_certificate.crt", "wb") as f:
