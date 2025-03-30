@@ -110,9 +110,9 @@ class SecureClient:
         print(response)
         return "Authentication successful" in response
 
-    def send_blinded_message(self, secure_socket):
+    def send_blinded_message(self, input_message, secure_socket):
         """Send a blinded message for signing."""
-        message = input("Enter message for blind signing: ")
+        message = input_message
         blinded_message, r_inv = self.blind_message(message)
 
         if not blinded_message:
@@ -152,26 +152,48 @@ class SecureClient:
         for msg in messages:
             print(msg)
 
+    def cast_vote(self):
+        """Display candidates for political office and cast vote"""
+        while True:
+            print("\n=== Voting Menu ===")
+            print("1. Hingle McCringleberry, East side")
+            print("2. Donky Teeth, West side")
+            print("3. Fudge, Fudge")
+            print("4. Return")
+            choice = input("Choose an option: ")
+
+            if choice == "1":
+                self.send_blinded_message("hingle_mccringleberry", self.secure_socket)
+            elif choice == "2":
+                self.send_blinded_message("donkey_teeth", self.secure_socket)
+            elif choice == "3":
+                self.send_blinded_message("fudge", self.secure_socket)
+            elif choice == "4":
+                print("Returning to main menu...")
+                break
+            else:
+                print("Invalid choice. Please try again.")
+
     def show_menu(self):
         """Display the main menu and handle user input."""
         try:
-            secure_socket = self.connect()  # Open connection once
+            self.secure_socket = self.connect()  # Open connection once
 
             # Authenticate user
-            if not self.send_credentials(secure_socket):
+            if not self.send_credentials(self.secure_socket):
                 print("⚠️ [CLIENT] Authentication failed. Exiting...")
-                secure_socket.close()
+                self.secure_socket.close()
                 return
 
             while True:
                 print("\n=== Secure Client Menu ===")
-                print("1. Send message for blind signing")
+                print("1. Cast Vote")
                 print("2. Fetch stored messages from the database")
                 print("3. Exit")
                 choice = input("Choose an option: ")
 
                 if choice == "1":
-                    self.send_blinded_message(secure_socket)
+                    self.cast_vote()
                 elif choice == "2":
                     self.fetch_messages_from_db()
                 elif choice == "3":
@@ -182,4 +204,4 @@ class SecureClient:
         except Exception as e:
             print(f"⚠️ [ERROR] {e}")
         finally:
-            secure_socket.close()  # Close socket when done
+            self.secure_socket.close()  # Close socket when done
