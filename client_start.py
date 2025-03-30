@@ -9,4 +9,4 @@ client = SecureClient(
     db_path=DB_PATH,
 )
 
-client.connect()
+client.show_menu()
