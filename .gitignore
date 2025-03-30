@@ -3,4 +3,5 @@
 *.key
 *.pyc
 *.db
+*.tif
 __pycache__/

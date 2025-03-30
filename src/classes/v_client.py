@@ -3,9 +3,15 @@ import socket
 import sqlite3
 import ssl
 
+import cv2
 from Crypto.Hash import SHA256
 from Crypto.PublicKey import RSA
 from Crypto.Util.number import getPrime, inverse
+from simhash import Simhash
+from skimage.feature import corner_harris, corner_peaks
+from skimage.morphology import skeletonize
+
+from config import FING_DB
 
 
 class SecureClient:
@@ -24,6 +30,9 @@ class SecureClient:
         self.con = sqlite3.connect(self.db_path)
         self.cur = self.con.cursor()
         self.init_db()
+        self.fing_conn = sqlite3.connect(FING_DB)
+        self.fing_cur = self.fing_conn.cursor()
+        self.init_fing_db()
 
     def init_db(self):
         """Creates the database tables if they do not exist."""
@@ -38,6 +47,16 @@ class SecureClient:
         )
         self.con.commit()
 
+    def init_fing_db(self):
+        """Creates the fingerprint hash database tables if they do not exist."""
+        self.cur.execute(
+            """CREATE TABLE IF NOT EXISTS fing_hash (
+                user TEXT UNIQUE NOT NULL,
+                fing_hash TEXT
+            )"""
+        )
+        self.con.commit()
+
     def save_message(self, user, message, signature, verified):
         """Stores messages and their corresponding signatures in the database."""
         self.cur.execute(
@@ -45,6 +64,25 @@ class SecureClient:
             (user, message, signature, verified),
         )
         self.con.commit()
+
+    def extract_minutiae(image_path):
+        img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+        _, binary = cv2.threshold(img, 127, 255, cv2.THRESH_BINARY)
+        skeleton = skeletonize(binary // 255)  # Convert to binary skeleton
+        minutiae_points = corner_peaks(corner_harris(skeleton), min_distance=5)
+        return minutiae_points
+
+    def save_fingerprint(self, user_id, minutiae):
+        fingerprint_hash = Simhash([f"{x},{y}" for x, y in minutiae]).value
+
+        self.fing_cur.execute(
+            "INSERT INTO fingerprints (user_id, hash) VALUES (?, ?)",
+            (
+                user_id,
+                str(fingerprint_hash),
+            ),
+        )
+        self.fing_conn.commit()
 
     def blind_message(self, message):
         """Blinds a message before sending it for signing."""
