@@ -33,7 +33,7 @@ class SecureClient:
     def encrypt_message(self, aes_key, message):
         """Encrypt a message using AES-GCM"""
         cipher_aes = AES.new(aes_key, AES.MODE_GCM)
-        ciphertext, tag = cipher_aes.encrypt_and_digest(message.encode())
+        ciphertext, tag = cipher_aes.encrypt_and_digest(message.encode("ascii"))
         return json.dumps(
             {
                 "nonce": cipher_aes.nonce.hex(),
@@ -52,7 +52,7 @@ class SecureClient:
             return cipher_aes.decrypt_and_verify(
                 bytes.fromhex(payload["ciphertext"]),
                 bytes.fromhex(payload["tag"]),
-            ).decode()
+            ).decode("ascii")
         except (ValueError, KeyError, json.JSONDecodeError):
             return None  # Handle decryption failure
 
@@ -68,14 +68,14 @@ class SecureClient:
         return aes_key
 
     def rcvd_decrypt(self, secure_socket, aes_key):
-        response_payload = secure_socket.recv(4096).decode()
+        response_payload = secure_socket.recv(4096).decode("ascii")
         decrypted_response = self.decrypt_message(aes_key, response_payload)
         return decrypted_response
 
-    def send_encrypt(self, secure_socket, aes_key):
+    def send_encrypt_message(self, secure_socket, aes_key):
         message = self.message()
         encrypted_payload = self.encrypt_message(aes_key, message)
-        secure_socket.send(encrypted_payload.encode())
+        secure_socket.send(encrypted_payload.encode("ascii"))
         return message
 
     def connect(self):
@@ -94,7 +94,7 @@ class SecureClient:
 
                     while True:
                         # Step 2: Get user input and send encrypted message
-                        message = self.send_encrypt(secure_socket, aes_key)
+                        message = self.send_encrypt_message(secure_socket, aes_key)
 
                         if message.lower() == "exit":
                             print("🔴 [CLIENT] Disconnecting...")

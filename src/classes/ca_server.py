@@ -40,7 +40,7 @@ class SecureServer:
             return cipher_aes.decrypt_and_verify(
                 bytes.fromhex(payload["ciphertext"]),
                 bytes.fromhex(payload["tag"]),
-            ).decode()
+            ).decode("ascii")
         except (ValueError, KeyError, json.JSONDecodeError):
             print("[ERROR] Message decryption failed!")
             return None
@@ -48,7 +48,7 @@ class SecureServer:
     def encrypt_message(self, aes_key, message):
         """Encrypt a message using AES-GCM"""
         cipher_aes = AES.new(aes_key, AES.MODE_GCM)
-        ciphertext, tag = cipher_aes.encrypt_and_digest(message.encode())
+        ciphertext, tag = cipher_aes.encrypt_and_digest(message.encode("ascii"))
         return json.dumps(
             {
                 "nonce": cipher_aes.nonce.hex(),
@@ -57,11 +57,11 @@ class SecureServer:
             }
         )
 
-    def send_encrypt(self, client_socket, aes_key, decrypted_message):
+    def send_encrypt_response(self, client_socket, aes_key, decrypted_message):
         response_payload = self.encrypt_message(
             aes_key, f"Server received: {decrypted_message}"
         )
-        client_socket.send(response_payload.encode())
+        client_socket.send(response_payload.encode("ascii"))
 
     def handle_client(self, client_socket, addr):
         """Handles communication with a single client"""
@@ -77,7 +77,7 @@ class SecureServer:
 
                 while True:
                     # Receive encrypted message
-                    payload = client_socket.recv(4096).decode()
+                    payload = client_socket.recv(4096).decode("ascii")
                     if not payload:
                         break  # Client disconnected
 
@@ -91,7 +91,9 @@ class SecureServer:
                             break
 
                         # Send encrypted response
-                        self.send_encrypt(client_socket, aes_key, decrypted_message)
+                        self.send_encrypt_response(
+                            client_socket, aes_key, decrypted_message
+                        )
 
         except ConnectionResetError:
             print(f"⚠️ [ERROR] Connection lost from {addr}")
