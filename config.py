@@ -1,6 +1,7 @@
 # Server Configuration
 SERVER_HOST = "127.0.0.1"
 SERVER_PORT = 50000
+CONNECTION_TIMEOUT = 10
 
 # SSL Certificate Paths
 CERT_FILE = "certs/ssl_certificate.crt"

@@ -3,14 +3,16 @@ import socket
 import sqlite3
 import ssl
 import threading
+import time
 from hashlib import sha256
 
 from Crypto.PublicKey import RSA
-from Crypto.Util.number import inverse
 
 
 class SecureServer:
-    def __init__(self, host, port, certfile, keyfile, private_key, db_path):
+    def __init__(
+        self, host, port, certfile, keyfile, private_key, db_path, inactivity_timeout=60
+    ):
         self.host = host
         self.port = port
         self.context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -29,6 +31,21 @@ class SecureServer:
 
         # Initialize DB tables
         self.init_db()
+
+        # Timeout (in seconds) to shut down the server if no activity is detected
+        self.inactivity_timeout = inactivity_timeout
+
+        # Last communication timestamp (initialized to the current time)
+        self.last_communication_time = time.time()
+
+        # Event to signal shutdown
+        self.shutdown_event = threading.Event()
+
+        # Thread to monitor inactivity
+        self.inactivity_thread = threading.Thread(
+            target=self.check_inactivity, daemon=True
+        )
+        self.inactivity_thread.start()
 
     def init_db(self):
         """Initialize the database and create tables if they don't exist."""
@@ -130,6 +147,9 @@ class SecureServer:
                     self.log_event(f"Authentication failed for {username}.")
                     return  # Close connection after authentication failure
 
+                # Update last communication time
+                self.update_last_communication()
+
                 # Proceed with blind signing
                 while True:
                     request = client_socket.recv(4096).decode("utf-8")
@@ -150,6 +170,9 @@ class SecureServer:
                             client_socket.send(response.encode("utf-8"))
                             print(f"✅ [SERVER] Sent blind signature to {addr}")
                             self.log_event(f"Sent blind signature to {addr}")
+
+                        # Update last communication time
+                        self.update_last_communication()
                     except json.JSONDecodeError:
                         print(f"⚠️ [ERROR] Invalid JSON from {addr}")
 
@@ -157,6 +180,25 @@ class SecureServer:
             print(f"⚠️ [ERROR] Connection lost from {addr}")
         finally:
             print(f"🔌 [SERVER] Closing connection with {addr}")
+
+    def update_last_communication(self):
+        """Update the timestamp of the last communication."""
+        self.last_communication_time = time.time()
+
+    def check_inactivity(self):
+        """Check if the server should be shut down due to inactivity."""
+        while True:
+            time.sleep(10)  # Check every 10 seconds
+            if time.time() - self.last_communication_time > self.inactivity_timeout:
+                print(f"⚠️ [SERVER] Inactivity timeout reached. Shutting down...")
+                self.shutdown_event.set()  # Signal shutdown
+
+    def shutdown_server(self):
+        """Shuts down the server."""
+        print("Shutting down server gracefully...")
+        # Close the main connection when server shuts down
+        self.con.close()
+        exit()
 
     def start(self):
         """Starts the secure server and listens for clients."""
@@ -178,6 +220,11 @@ class SecureServer:
                             args=(client_socket, addr),
                             daemon=True,
                         ).start()
+
+                        # Check if shutdown has been signaled due to inactivity
+                        if self.shutdown_event.is_set():
+                            self.shutdown_server()
+                            break
 
                 except KeyboardInterrupt:
                     print("\n🔴 [SERVER] Shutting down...")
