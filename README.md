@@ -5,7 +5,7 @@ Task List
 DONE Create Client class
 DONE Create Server class
 DONE Securely connect Client and Server
-TODO Add database for fingerprint hashes
+DONE Add database for fingerprint hashes
 TODO Add fingerprint hashing function
 TODO Add fingerprint hash comparision function
 TODO Add voting capabilities

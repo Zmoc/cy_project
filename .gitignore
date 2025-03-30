@@ -2,3 +2,5 @@
 *.crt
 *.key
 *.pyc
+*.db
+__pycache__/
