@@ -159,6 +159,10 @@ class SecureServer:
                     try:
                         request_data = json.loads(request)
                         if "blinded_message" in request_data:
+                            print(
+                                "✅ [SERVER] Request Recieved:",
+                                request_data["blinded_message"],
+                            )
                             blinded_signature = self.blind_sign(
                                 request_data["blinded_message"]
                             )

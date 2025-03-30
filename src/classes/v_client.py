@@ -15,6 +15,7 @@ class SecureClient:
         self.context = ssl.create_default_context()
         self.context.load_verify_locations(certfile)
         self.db_path = db_path
+        self.current_user = ""
 
         # Load server's public RSA key
         with open(public_key, "rb") as f:
@@ -29,6 +30,7 @@ class SecureClient:
         self.cur.execute(
             """CREATE TABLE IF NOT EXISTS messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user TEXT NOT NULL,
                 message TEXT NOT NULL,
                 signature TEXT,
                 verified INTEGER
@@ -36,11 +38,11 @@ class SecureClient:
         )
         self.con.commit()
 
-    def save_message(self, message, signature, verified):
+    def save_message(self, user, message, signature, verified):
         """Stores messages and their corresponding signatures in the database."""
         self.cur.execute(
-            "INSERT INTO messages (message, signature, verified) VALUES (?, ?, ?)",
-            (message, signature, verified),
+            "INSERT INTO messages (user, message, signature, verified) VALUES (?, ?, ?, ?)",
+            (user, message, signature, verified),
         )
         self.con.commit()
 
@@ -108,9 +110,10 @@ class SecureClient:
         # Receive authentication response from the server
         response = secure_socket.recv(1024).decode("utf-8")
         print(response)
+        self.current_user = username
         return "Authentication successful" in response
 
-    def send_blinded_message(self, input_message, secure_socket):
+    def send_blinded_message(self, user, input_message, secure_socket):
         """Send a blinded message for signing."""
         message = input_message
         blinded_message, r_inv = self.blind_message(message)
@@ -138,7 +141,7 @@ class SecureClient:
                 print(
                     f"✅ [CLIENT] Signature verified successfully: {unblinded_signature}"
                 )
-                self.save_message(message, unblinded_signature, True)
+                self.save_message(user, message, unblinded_signature, True)
             else:
                 print("⚠️ [CLIENT] Signature verification failed.")
         else:
@@ -152,10 +155,11 @@ class SecureClient:
         for msg in messages:
             print(msg)
 
-    def cast_vote(self):
+    def cast_vote(self, user):
         """Display candidates for political office and cast vote"""
         while True:
             print("\n=== Voting Menu ===")
+            print(f"=== Current User: {self.current_user} ===")
             print("1. Hingle McCringleberry, East side")
             print("2. Donky Teeth, West side")
             print("3. Fudge, Fudge")
@@ -163,11 +167,13 @@ class SecureClient:
             choice = input("Choose an option: ")
 
             if choice == "1":
-                self.send_blinded_message("hingle_mccringleberry", self.secure_socket)
+                self.send_blinded_message(
+                    user, "hingle_mccringleberry", self.secure_socket
+                )
             elif choice == "2":
-                self.send_blinded_message("donkey_teeth", self.secure_socket)
+                self.send_blinded_message(user, "donkey_teeth", self.secure_socket)
             elif choice == "3":
-                self.send_blinded_message("fudge", self.secure_socket)
+                self.send_blinded_message(user, "fudge", self.secure_socket)
             elif choice == "4":
                 print("Returning to main menu...")
                 break
@@ -186,14 +192,15 @@ class SecureClient:
                 return
 
             while True:
-                print("\n=== Secure Client Menu ===")
+                print("\n=== Voting Machine Main Menu ===")
+                print(f"=== Current User: {self.current_user} ===")
                 print("1. Cast Vote")
                 print("2. Fetch stored messages from the database")
                 print("3. Exit")
                 choice = input("Choose an option: ")
 
                 if choice == "1":
-                    self.cast_vote()
+                    self.cast_vote(self.current_user)
                 elif choice == "2":
                     self.fetch_messages_from_db()
                 elif choice == "3":
