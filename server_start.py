@@ -1,5 +1,5 @@
 from config import CERT_FILE, KEY_FILE, SERVER_PORT, SERVER_PRIVATE_KEY
-from src.classes.server import SecureServer
+from src.classes.ca_server import SecureServer
 
 ca_server = SecureServer(
     host="0.0.0.0",
