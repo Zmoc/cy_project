@@ -14,4 +14,5 @@ AES_KEY_SIZE = 32  # 256-bit AES key
 MAX_MESSAGE_SIZE = 4096
 
 # Fingerprint Database Path
-DB_PATH = "data/db/fing_hash.db"
+FING_DB = "data/db/fing_hash.db"
+USER_DB = "data/db/user.db"

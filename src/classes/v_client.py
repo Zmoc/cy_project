@@ -97,6 +97,19 @@ class SecureClient:
         print("🔒 [CLIENT] Secure connection established.")
         return secure_socket
 
+    def send_credentials(self, secure_socket):
+        """Prompt for username and password, then send them to the server."""
+        username = input("Enter your username: ")
+        password = input("Enter your password: ")
+
+        credentials = json.dumps({"username": username, "password": password})
+        secure_socket.send(credentials.encode("utf-8"))
+
+        # Receive authentication response from the server
+        response = secure_socket.recv(1024).decode("utf-8")
+        print(response)
+        return "Authentication successful" in response
+
     def send_blinded_message(self, secure_socket):
         """Send a blinded message for signing."""
         message = input("Enter message for blind signing: ")
@@ -143,6 +156,12 @@ class SecureClient:
         """Display the main menu and handle user input."""
         try:
             secure_socket = self.connect()  # Open connection once
+
+            # Authenticate user
+            if not self.send_credentials(secure_socket):
+                print("⚠️ [CLIENT] Authentication failed. Exiting...")
+                secure_socket.close()
+                return
 
             while True:
                 print("\n=== Secure Client Menu ===")

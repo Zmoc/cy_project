@@ -1,14 +1,16 @@
 import json
 import socket
+import sqlite3
 import ssl
 import threading
+from hashlib import sha256
 
 from Crypto.PublicKey import RSA
 from Crypto.Util.number import inverse
 
 
 class SecureServer:
-    def __init__(self, host, port, certfile, keyfile, private_key):
+    def __init__(self, host, port, certfile, keyfile, private_key, db_path):
         self.host = host
         self.port = port
         self.context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -17,6 +19,84 @@ class SecureServer:
         # Load RSA private key
         with open(private_key, "rb") as f:
             self.server_private_key = RSA.import_key(f.read())
+
+        # SQLite database path
+        self.db_path = db_path
+
+        # Connect to SQLite database (Main thread only)
+        self.con = sqlite3.connect(self.db_path)
+        self.cur = self.con.cursor()
+
+        # Initialize DB tables
+        self.init_db()
+
+    def init_db(self):
+        """Initialize the database and create tables if they don't exist."""
+        # Create a table for storing users' credentials (username, password hash)
+        self.cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL
+            )
+            """
+        )
+        # Create a table to log connection events
+        self.cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                message TEXT NOT NULL,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+
+        # Initialize default user and password only if it does not exist
+        self.cur.execute("SELECT * FROM users WHERE username = ?", ("admin",))
+        if not self.cur.fetchone():
+            # Default username and password
+            username = "admin"
+            password = "admin"
+            # Hash the password
+            password_hash = sha256(password.encode()).hexdigest()
+            self.cur.execute(
+                "INSERT INTO users (username, password_hash) VALUES (?, ?)",
+                (username, password_hash),
+            )
+            self.cur.execute(
+                "INSERT INTO logs (message) VALUES (?)", ("Initial setup",)
+            )
+            self.con.commit()
+
+    def authenticate_user(self, username, password):
+        """Authenticate the user by checking the username and password hash from the SQLite database."""
+        # Open a new connection to the database for each thread
+        conn = sqlite3.connect(self.db_path)
+        cur = conn.cursor()
+
+        cur.execute(
+            "SELECT password_hash FROM users WHERE username = ?",
+            (username,),
+        )
+        user = cur.fetchone()
+        conn.close()
+
+        if user:
+            stored_hash = user[0]
+            # Hash the input password and compare with stored hash
+            input_password_hash = sha256(password.encode()).hexdigest()
+            return stored_hash == input_password_hash
+        return False
+
+    def log_event(self, message):
+        """Log events (e.g., successful login, blind sign request) to the SQLite database."""
+        conn = sqlite3.connect(self.db_path)
+        cur = conn.cursor()
+        cur.execute("INSERT INTO logs (message) VALUES (?)", (message,))
+        conn.commit()
+        conn.close()
 
     def blind_sign(self, blinded_message_hex):
         """Signs the blinded message received from the client."""
@@ -33,6 +113,24 @@ class SecureServer:
         """Handles client requests for blind signing."""
         try:
             with client_socket:
+                # First, authenticate the user
+                credentials = client_socket.recv(4096).decode("utf-8")
+                credentials_data = json.loads(credentials)
+                username = credentials_data.get("username")
+                password = credentials_data.get("password")
+
+                # Authenticate user
+                if self.authenticate_user(username, password):
+                    client_socket.send("Authentication successful".encode("utf-8"))
+                    print(f"✅ [SERVER] User {username} authenticated successfully.")
+                    self.log_event(f"User {username} authenticated.")
+                else:
+                    client_socket.send("Authentication failed".encode("utf-8"))
+                    print(f"⚠️ [SERVER] Authentication failed for {username}.")
+                    self.log_event(f"Authentication failed for {username}.")
+                    return  # Close connection after authentication failure
+
+                # Proceed with blind signing
                 while True:
                     request = client_socket.recv(4096).decode("utf-8")
                     if not request:
@@ -51,6 +149,7 @@ class SecureServer:
                             )
                             client_socket.send(response.encode("utf-8"))
                             print(f"✅ [SERVER] Sent blind signature to {addr}")
+                            self.log_event(f"Sent blind signature to {addr}")
                     except json.JSONDecodeError:
                         print(f"⚠️ [ERROR] Invalid JSON from {addr}")
 
@@ -82,3 +181,6 @@ class SecureServer:
 
                 except KeyboardInterrupt:
                     print("\n🔴 [SERVER] Shutting down...")
+                finally:
+                    # Close the main connection when server shuts down
+                    self.con.close()
