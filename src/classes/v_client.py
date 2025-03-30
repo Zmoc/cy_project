@@ -3,9 +3,10 @@ import socket
 import sqlite3
 import ssl
 
-from Crypto.Cipher import AES, PKCS1_OAEP
+from Crypto.Hash import SHA256
 from Crypto.PublicKey import RSA
 from Crypto.Random import get_random_bytes
+from Crypto.Util.number import getPrime, inverse
 
 
 class SecureClient:
@@ -15,7 +16,7 @@ class SecureClient:
         self.context = ssl.create_default_context()
         self.context.load_verify_locations(certfile)
         self.db_path = db_path
-        self.con = sqlite3.connect(database=self.db_path)
+        self.con = sqlite3.connect(self.db_path)
         self.cur = self.con.cursor()
 
         # Load server's public RSA key
@@ -25,61 +26,52 @@ class SecureClient:
     def cursor(self):
         return self.cur
 
-    def encrypt_aes_key(self, aes_key):
-        """Encrypt AES key using RSA"""
-        cipher_rsa = PKCS1_OAEP.new(self.server_public_key)
-        return cipher_rsa.encrypt(aes_key)
-
-    def encrypt_message(self, aes_key, message):
-        """Encrypt a message using AES-GCM"""
-        cipher_aes = AES.new(aes_key, AES.MODE_GCM)
-        ciphertext, tag = cipher_aes.encrypt_and_digest(message.encode("ascii"))
-        return json.dumps(
-            {
-                "nonce": cipher_aes.nonce.hex(),
-                "ciphertext": ciphertext.hex(),
-                "tag": tag.hex(),
-            }
-        )
-
-    def decrypt_message(self, aes_key, payload):
-        """Decrypt a message using AES-GCM"""
+    def blind_message(self, message):
+        """Blinds a message before sending it for signing."""
         try:
-            payload = json.loads(payload)
-            cipher_aes = AES.new(
-                aes_key, AES.MODE_GCM, nonce=bytes.fromhex(payload["nonce"])
-            )
-            return cipher_aes.decrypt_and_verify(
-                bytes.fromhex(payload["ciphertext"]),
-                bytes.fromhex(payload["tag"]),
-            ).decode("ascii")
-        except (ValueError, KeyError, json.JSONDecodeError):
-            return None  # Handle decryption failure
+            n = self.server_public_key.n
+            e = self.server_public_key.e
+            r = getPrime(256)  # Random blinding factor
+            r_inv = inverse(r, n)  # Compute modular inverse
 
-    def message(self):
-        message = input("Enter message (type 'exit' to quit): ")
-        return message
+            message_hash = SHA256.new(message.encode()).digest()
+            m = int.from_bytes(message_hash, "big")
+            blinded_message = (m * pow(r, e, n)) % n  # Blind the message
 
-    def send_aes_key(self, secure_socket):
-        aes_key = get_random_bytes(32)  # 256-bit AES key
-        encrypted_aes_key = self.encrypt_aes_key(aes_key)
-        secure_socket.send(encrypted_aes_key)
-        print("🔑 [CLIENT] AES Key Sent Securely.")
-        return aes_key
+            return hex(blinded_message)[2:], r_inv  # Convert to hex
+        except Exception as e:
+            print(f"⚠️ [ERROR] Blinding failed: {e}")
+            return None, None
 
-    def rcvd_decrypt(self, secure_socket, aes_key):
-        response_payload = secure_socket.recv(4096).decode("ascii")
-        decrypted_response = self.decrypt_message(aes_key, response_payload)
-        return decrypted_response
+    def unblind_signature(self, blinded_signature_hex, r_inv):
+        """Unblinds the received signature."""
+        try:
+            n = self.server_public_key.n
+            blinded_signature = int(blinded_signature_hex, 16)
+            signature = (blinded_signature * r_inv) % n  # Unblind signature
+            return hex(signature)[2:]
+        except Exception as e:
+            print(f"⚠️ [ERROR] Unblinding failed: {e}")
+            return None
 
-    def send_encrypt_message(self, secure_socket, aes_key):
-        message = self.message()
-        encrypted_payload = self.encrypt_message(aes_key, message)
-        secure_socket.send(encrypted_payload.encode("ascii"))
-        return message
+    def verify_signature(self, message, signature_hex):
+        """Verifies the RSA signature."""
+        try:
+            signature = int(signature_hex, 16)
+            n = self.server_public_key.n
+            e = self.server_public_key.e
+
+            message_hash = SHA256.new(message.encode()).digest()
+            m = int.from_bytes(message_hash, "big")
+
+            verified_message = pow(signature, e, n)  # Verify RSA signature
+            return verified_message == m
+        except Exception as e:
+            print(f"⚠️ [ERROR] Signature verification failed: {e}")
+            return False
 
     def connect(self):
-        """Connect to the secure server"""
+        """Connect to the secure server for blind signing."""
         with socket.create_connection(
             (self.server_host, self.server_port)
         ) as client_socket:
@@ -89,22 +81,36 @@ class SecureClient:
                 print("🔒 [CLIENT] Secure connection established.")
 
                 try:
-                    # Step 1: Generate and send AES key
-                    aes_key = self.send_aes_key(secure_socket)
+                    message = input("Enter message for blind signing: ")
+                    blinded_message, r_inv = self.blind_message(message)
 
-                    while True:
-                        # Step 2: Get user input and send encrypted message
-                        message = self.send_encrypt_message(secure_socket, aes_key)
+                    if not blinded_message:
+                        print("⚠️ [CLIENT] Blinding failed, aborting.")
+                        return
 
-                        if message.lower() == "exit":
-                            print("🔴 [CLIENT] Disconnecting...")
-                            break
+                    # Send blinded message to server
+                    request_data = json.dumps({"blinded_message": blinded_message})
+                    secure_socket.send(request_data.encode("utf-8"))
 
-                        # Step 3: Receive and decrypt response
-                        decrypted_response = self.rcvd_decrypt(secure_socket, aes_key)
+                    # Receive and unblind signature
+                    response = secure_socket.recv(4096).decode("utf-8")
+                    response_data = json.loads(response)
 
-                        if decrypted_response:
-                            print(f"📩 [CLIENT] Server Response: {decrypted_response}")
+                    if "signature" in response_data:
+                        unblinded_signature = self.unblind_signature(
+                            response_data["signature"], r_inv
+                        )
+
+                        if unblinded_signature and self.verify_signature(
+                            message, unblinded_signature
+                        ):
+                            print(
+                                f"✅ [CLIENT] Signature verified successfully: {unblinded_signature}"
+                            )
+                        else:
+                            print("⚠️ [CLIENT] Signature verification failed.")
+                    else:
+                        print(f"⚠️ [CLIENT] Error: {response_data.get('error')}")
 
                 except ConnectionResetError:
                     print("⚠️ [ERROR] Connection lost.")
