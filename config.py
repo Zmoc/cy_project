@@ -3,8 +3,8 @@ SERVER_HOST = "127.0.0.1"
 SERVER_PORT = 50000
 
 # SSL Certificate Paths
-CERT_FILE = "certs/server.crt"
-KEY_FILE = "certs/server.key"
+CERT_FILE = "certs/ssl_certificate.crt"
+KEY_FILE = "certs/ssl_private.key"
 SERVER_PRIVATE_KEY = "certs/server_private.pem"
 CLIENT_CERT_FILE = "certs/client.crt"
 SERVER_PUBLIC_KEY = "certs/server_public.pem"
