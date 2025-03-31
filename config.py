@@ -16,5 +16,5 @@ MAX_MESSAGE_SIZE = 4096
 
 # Fingerprint Database Path
 FING_DB = "data/db/fing_hash.db"
-CLIENT_DB = "data/db/client.db"
+CLIENT_DB = "data/db/client_cache.db"
 USER_DB = "data/db/user.db"

@@ -3,9 +3,13 @@ import socket
 import sqlite3
 import ssl
 
+import cv2
 from Crypto.Hash import SHA256
 from Crypto.PublicKey import RSA
 from Crypto.Util.number import getPrime, inverse
+from simhash import Simhash
+from skimage.feature import corner_harris, corner_peaks
+from skimage.morphology import skeletonize
 
 
 class SecureClient:
@@ -45,6 +49,17 @@ class SecureClient:
             (user, message, signature, verified),
         )
         self.con.commit()
+
+    def extract_minutiae(self, image_path):
+        img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+        _, binary = cv2.threshold(img, 127, 255, cv2.THRESH_BINARY)
+        skeleton = skeletonize(binary // 255)  # Convert to binary skeleton
+        minutiae_points = corner_peaks(corner_harris(skeleton), min_distance=5)
+        return minutiae_points
+
+    def gen_fing_hash(self, minutiae):
+        fingerprint_hash = Simhash([f"{x},{y}" for x, y in minutiae]).value
+        return fingerprint_hash
 
     def blind_message(self, message):
         """Blinds a message before sending it for signing."""
@@ -103,8 +118,13 @@ class SecureClient:
         """Prompt for username and password, then send them to the server."""
         username = input("Enter your username: ")
         password = input("Enter your password: ")
+        fing_hash = self.gen_fing_hash(
+            self.extract_minutiae("data/sample_fingerprints/A.png")
+        )
 
-        credentials = json.dumps({"username": username, "password": password})
+        credentials = json.dumps(
+            {"username": username, "password": password, "fing_hash": fing_hash}
+        )
         secure_socket.send(credentials.encode("utf-8"))
 
         # Receive authentication response from the server

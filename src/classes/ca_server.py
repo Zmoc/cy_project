@@ -6,7 +6,11 @@ import threading
 import time
 from hashlib import sha256
 
+import cv2
 from Crypto.PublicKey import RSA
+from simhash import Simhash
+from skimage.feature import corner_harris, corner_peaks
+from skimage.morphology import skeletonize
 
 
 class SecureServer:
@@ -55,7 +59,8 @@ class SecureServer:
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT NOT NULL UNIQUE,
-                password_hash TEXT NOT NULL
+                password_hash TEXT NOT NULL,
+                fing_hash TEXT NOT NULL
             )
             """
         )
@@ -73,28 +78,30 @@ class SecureServer:
         # Initialize default user and password only if it does not exist
         self.cur.execute("SELECT * FROM users WHERE username = ?", ("admin",))
         if not self.cur.fetchone():
-            # Default username and password
             username = "admin"
             password = "admin"
-            # Hash the password
-            password_hash = sha256(password.encode()).hexdigest()
-            self.cur.execute(
-                "INSERT INTO users (username, password_hash) VALUES (?, ?)",
-                (username, password_hash),
-            )
-            self.cur.execute(
-                "INSERT INTO logs (message) VALUES (?)", ("Initial setup",)
-            )
-            self.con.commit()
+            self.save_fingerprint(username, password, "data/sample_fingerprints/A.png")
 
-    def authenticate_user(self, username, password):
+        self.cur.execute("SELECT * FROM users WHERE username = ?", ("alice",))
+        if not self.cur.fetchone():
+            username = "alice"
+            password = "password1"
+            self.save_fingerprint(username, password, "data/sample_fingerprints/B.png")
+
+        self.cur.execute("SELECT * FROM users WHERE username = ?", ("bob",))
+        if not self.cur.fetchone():
+            username = "bob"
+            password = "password2"
+            self.save_fingerprint(username, password, "data/sample_fingerprints/C.png")
+
+    def authenticate_user(self, username, password, input_fing_hash):
         """Authenticate the user by checking the username and password hash from the SQLite database."""
         # Open a new connection to the database for each thread
         conn = sqlite3.connect(self.db_path)
         cur = conn.cursor()
 
         cur.execute(
-            "SELECT password_hash FROM users WHERE username = ?",
+            "SELECT password_hash, fing_hash FROM users WHERE username = ?",
             (username,),
         )
         user = cur.fetchone()
@@ -102,10 +109,38 @@ class SecureServer:
 
         if user:
             stored_hash = user[0]
+            stored_fing_hash = user[1]
             # Hash the input password and compare with stored hash
             input_password_hash = sha256(password.encode()).hexdigest()
-            return stored_hash == input_password_hash
+            stored_fing_hash = int(stored_fing_hash)
+            hamming_distance = bin(input_fing_hash ^ stored_fing_hash).count("1")
+
+            return stored_hash == input_password_hash and hamming_distance < 5
         return False
+
+    def extract_minutiae(self, image_path):
+        img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+        _, binary = cv2.threshold(img, 127, 255, cv2.THRESH_BINARY)
+        skeleton = skeletonize(binary // 255)  # Convert to binary skeleton
+        minutiae_points = corner_peaks(corner_harris(skeleton), min_distance=5)
+        return minutiae_points
+
+    def save_fingerprint(self, username, password, fing_path):
+        minutiae = self.extract_minutiae(fing_path)
+        password_hash = sha256(password.encode()).hexdigest()
+        fing_hash = Simhash([f"{x},{y}" for x, y in minutiae]).value
+
+        self.cur.execute(
+            "INSERT INTO users (username, password_hash, fing_hash) VALUES (?, ?, ?)",
+            (
+                username,
+                password_hash,
+                str(fing_hash),
+            ),
+        )
+
+        self.log_event(f"Initial setup for {username}")
+        self.con.commit()
 
     def log_event(self, message):
         """Log events (e.g., successful login, blind sign request) to the SQLite database."""
@@ -135,9 +170,10 @@ class SecureServer:
                 credentials_data = json.loads(credentials)
                 username = credentials_data.get("username")
                 password = credentials_data.get("password")
+                fing_hash = credentials_data.get("fing_hash")
 
                 # Authenticate user
-                if self.authenticate_user(username, password):
+                if self.authenticate_user(username, password, fing_hash):
                     client_socket.send("Authentication successful".encode("utf-8"))
                     print(f"✅ [SERVER] User {username} authenticated successfully.")
                     self.log_event(f"User {username} authenticated.")
