@@ -54,6 +54,7 @@ class SecureServer:
     def init_db(self):
         """Initialize the database and create tables if they don't exist."""
         # Create a table for storing users' credentials (username, password hash)
+        self.cur.execute("PRAGMA journal_mode=WAL;")
         self.cur.execute(
             """
             CREATE TABLE IF NOT EXISTS users (
@@ -93,6 +94,7 @@ class SecureServer:
             username = "bob"
             password = "password2"
             self.save_fingerprint(username, password, "data/sample_fingerprints/C.png")
+        self.con.close()
 
     def authenticate_user(self, username, password, input_fing_hash):
         """Authenticate the user by checking the username and password hash from the SQLite database."""
@@ -138,9 +140,8 @@ class SecureServer:
                 str(fing_hash),
             ),
         )
-
-        self.log_event(f"Initial setup for {username}")
         self.con.commit()
+        self.log_event(f"Initial setup for {username}")
 
     def log_event(self, message):
         """Log events (e.g., successful login, blind sign request) to the SQLite database."""

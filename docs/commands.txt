@@ -1,7 +1,0 @@
-How to generate SSL certificates
-"openssl req -x509 -newkey rsa:4096 -keyout certs/server.key -out certs/server.crt -days 365 -nodes -config san.cnf"
-
-How to generate and extract the Public and Private keys:
-"openssl genpkey -algorithm RSA -out certs/server_private.pem -pkeyopt rsa_keygen_bits:2048"
-
-"openssl rsa -in certs/server_private.pem -pubout -out certs/server_public.pem"
