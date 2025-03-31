@@ -11,8 +11,6 @@ from simhash import Simhash
 from skimage.feature import corner_harris, corner_peaks
 from skimage.morphology import skeletonize
 
-from config import FING_DB
-
 
 class SecureClient:
     def __init__(self, server_host, server_port, certfile, public_key, db_path):
@@ -30,9 +28,6 @@ class SecureClient:
         self.con = sqlite3.connect(self.db_path)
         self.cur = self.con.cursor()
         self.init_db()
-        self.fing_conn = sqlite3.connect(FING_DB)
-        self.fing_cur = self.fing_conn.cursor()
-        self.init_fing_db()
 
     def init_db(self):
         """Creates the database tables if they do not exist."""
@@ -47,16 +42,6 @@ class SecureClient:
         )
         self.con.commit()
 
-    def init_fing_db(self):
-        """Creates the fingerprint hash database tables if they do not exist."""
-        self.cur.execute(
-            """CREATE TABLE IF NOT EXISTS fing_hash (
-                user TEXT UNIQUE NOT NULL,
-                fing_hash TEXT
-            )"""
-        )
-        self.con.commit()
-
     def save_message(self, user, message, signature, verified):
         """Stores messages and their corresponding signatures in the database."""
         self.cur.execute(
@@ -65,24 +50,16 @@ class SecureClient:
         )
         self.con.commit()
 
-    def extract_minutiae(image_path):
+    def extract_minutiae(self, image_path):
         img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
         _, binary = cv2.threshold(img, 127, 255, cv2.THRESH_BINARY)
         skeleton = skeletonize(binary // 255)  # Convert to binary skeleton
         minutiae_points = corner_peaks(corner_harris(skeleton), min_distance=5)
         return minutiae_points
 
-    def save_fingerprint(self, user_id, minutiae):
+    def gen_fing_hash(self, minutiae):
         fingerprint_hash = Simhash([f"{x},{y}" for x, y in minutiae]).value
-
-        self.fing_cur.execute(
-            "INSERT INTO fingerprints (user_id, hash) VALUES (?, ?)",
-            (
-                user_id,
-                str(fingerprint_hash),
-            ),
-        )
-        self.fing_conn.commit()
+        return fingerprint_hash
 
     def blind_message(self, message):
         """Blinds a message before sending it for signing."""
@@ -141,8 +118,13 @@ class SecureClient:
         """Prompt for username and password, then send them to the server."""
         username = input("Enter your username: ")
         password = input("Enter your password: ")
+        fing_hash = self.gen_fing_hash(
+            self.extract_minutiae("data/sample_fingerprints/A.png")
+        )
 
-        credentials = json.dumps({"username": username, "password": password})
+        credentials = json.dumps(
+            {"username": username, "password": password, "fing_hash": fing_hash}
+        )
         secure_socket.send(credentials.encode("utf-8"))
 
         # Receive authentication response from the server
