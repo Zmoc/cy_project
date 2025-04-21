@@ -52,7 +52,7 @@ class SecureClient:
 
     def extract_minutiae(self, image_path):
         img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-        _, binary = cv2.threshold(img, 127, 255, cv2.THRESH_BINARY)
+        _, binary = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         skeleton = skeletonize(binary // 255)  # Convert to binary skeleton
         minutiae_points = corner_peaks(corner_harris(skeleton), min_distance=5)
         return minutiae_points
