@@ -10,4 +10,4 @@ DONE Add fingerprint hashing function
 DONE Add fingerprint hash comparision function
 DONE Add voting capabilities
 DONE Add differential privacy/blind signing capability
-TODO Create working Dockerfile
+
